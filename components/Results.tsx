@@ -3,10 +3,12 @@
 import { useState } from "react";
 import type { AgentEvent, Plan } from "@/lib/agent";
 import type { ResolvedPerson } from "@/lib/engine";
+import { PlanView, type OptionList } from "./PlanView";
 import { PERSON_COLORS } from "./presets";
 
 export interface Step {
   id: string;
+  name: string;
   label: string;
   done: boolean;
   ok?: boolean;
@@ -17,17 +19,18 @@ export interface RunState {
   steps: Step[];
   thoughts: string[];
   people: ResolvedPerson[];
+  options: OptionList[];
   plan?: Plan;
   error?: string;
   baseline?: { text?: string; error?: string };
 }
 
-export const EMPTY_RUN: RunState = { steps: [], thoughts: [], people: [] };
+export const EMPTY_RUN: RunState = { steps: [], thoughts: [], people: [], options: [] };
 
 export function reduce(state: RunState, e: AgentEvent): RunState {
   switch (e.type) {
     case "tool":
-      return { ...state, steps: [...state.steps, { id: e.id, label: e.label, done: false }] };
+      return { ...state, steps: [...state.steps, { id: e.id, name: e.name, label: e.label, done: false }] };
     case "tool_done":
       return {
         ...state,
@@ -37,6 +40,8 @@ export function reduce(state: RunState, e: AgentEvent): RunState {
       return { ...state, thoughts: [...state.thoughts, e.text] };
     case "person":
       return { ...state, people: [...state.people.filter((p) => p.name !== e.person.name), e.person] };
+    case "candidates":
+      return { ...state, options: [...state.options, { label: e.label, candidates: e.candidates }] };
     case "plan":
       return { ...state, plan: e.plan };
     case "error":
@@ -46,12 +51,29 @@ export function reduce(state: RunState, e: AgentEvent): RunState {
   }
 }
 
-export function Results({ run, order, busy }: { run: RunState; order: string[]; busy: boolean }) {
-  const color = (name: string) => PERSON_COLORS[Math.max(order.indexOf(name), 0) % PERSON_COLORS.length];
+export const colorFor = (order: string[]) => (name: string) =>
+  PERSON_COLORS[Math.max(order.indexOf(name), 0) % PERSON_COLORS.length];
+
+export function Results({
+  run,
+  order,
+  busy,
+  occasion,
+  city,
+}: {
+  run: RunState;
+  order: string[];
+  busy: boolean;
+  occasion: string;
+  city: string;
+}) {
+  const color = colorFor(order);
   const people = order.map((n) => run.people.find((p) => p.name === n)).filter(Boolean) as ResolvedPerson[];
+  const tastes = Object.fromEntries(people.map((p) => [p.name, p.tasteTags.slice(0, 6)]));
 
   return (
     <div className="flex flex-col gap-5">
+      {busy && !run.plan && <Progress run={run} />}
       {people.length > 0 && <TasteProfiles people={people} color={color} />}
       <Trace run={run} busy={busy} />
       {run.error && (
@@ -59,8 +81,81 @@ export function Results({ run, order, busy }: { run: RunState; order: string[]; 
           {run.error}
         </div>
       )}
-      {run.plan && <PlanView plan={run.plan} order={order} color={color} />}
+      {busy && !run.plan && <PlanSkeleton />}
+      {run.plan && (
+        <PlanView
+          plan={run.plan}
+          order={order}
+          color={color}
+          tastes={tastes}
+          options={run.options}
+          occasion={occasion}
+          city={city}
+        />
+      )}
       {(run.plan || run.baseline) && <Compare baseline={run.baseline} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// While the agent works: a stage tracker and a placeholder for the plan.
+
+const STAGES = [
+  "Understanding everyone's taste",
+  "Exploring options in Qloo",
+  "Scoring every option for every person",
+  "Writing your plan",
+];
+
+function stageOf(run: RunState) {
+  const has = (name: string, done?: boolean) => run.steps.some((s) => s.name === name && (!done || s.done));
+  if (has("present_plan")) return 3;
+  if (has("group_recommend", true)) return 2;
+  if (has("group_recommend") || has("find_tags")) return 1;
+  return 0;
+}
+
+function Progress({ run }: { run: RunState }) {
+  const stage = stageOf(run);
+  return (
+    <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5" aria-label="Progress">
+      <ol className="grid gap-2 sm:grid-cols-4">
+        {STAGES.map((label, i) => (
+          <li key={label} className="flex items-center gap-2 text-sm sm:flex-col sm:items-start sm:gap-1.5">
+            <span
+              className={`h-1.5 w-8 shrink-0 rounded-full transition-colors sm:w-full ${
+                i < stage ? "bg-good" : i === stage ? "skeleton" : "bg-line"
+              }`}
+            />
+            <span className={i === stage ? "font-medium" : i < stage ? "text-muted" : "text-muted/60"}>{label}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function PlanSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-line bg-surface" aria-hidden="true">
+      <div className="flex flex-col gap-3 border-b border-line p-5 sm:p-7">
+        <div className="skeleton h-3 w-40" />
+        <div className="skeleton h-10 w-3/4" />
+        <div className="skeleton h-3 w-full" />
+        <div className="skeleton h-3 w-5/6" />
+      </div>
+      {[0, 1].map((i) => (
+        <div key={i} className="grid gap-4 border-b border-line p-5 last:border-0 sm:grid-cols-[112px_1fr] sm:p-7">
+          <div className="skeleton h-20 w-20 rounded-2xl sm:h-28 sm:w-28" />
+          <div className="flex flex-col gap-2.5">
+            <div className="skeleton h-3 w-24" />
+            <div className="skeleton h-5 w-1/2" />
+            <div className="skeleton h-3 w-full" />
+            <div className="skeleton h-16 w-full rounded-xl" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -120,15 +215,16 @@ function TasteProfiles({ people, color }: { people: ResolvedPerson[]; color: (n:
 }
 
 function Trace({ run, busy }: { run: RunState; busy: boolean }) {
-  const [open, setOpen] = useState(true);
+  const [userOpen, setOpen] = useState<boolean>();
   if (!run.steps.length && !busy) return null;
-  const collapsed = !!run.plan && !open;
-  const lastThought = run.thoughts.at(-1);
+  const open = userOpen ?? !run.plan;
+  const collapsed = !open;
+  const lastThought = run.thoughts.at(-1)?.replace(/\*\*/g, "").split("\n")[0];
 
   return (
     <section className="rounded-3xl border border-line bg-surface p-4 sm:p-5">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between text-left text-xs font-semibold tracking-wide text-muted uppercase"
         aria-expanded={!collapsed}
       >
@@ -158,150 +254,6 @@ function Trace({ run, busy }: { run: RunState; busy: boolean }) {
         <p className="mt-3 border-l-2 border-line pl-3 text-sm text-muted italic">{lastThought}</p>
       )}
     </section>
-  );
-}
-
-function PlanView({ plan, order, color }: { plan: Plan; order: string[]; color: (n: string) => string }) {
-  return (
-    <article className="rise overflow-hidden rounded-3xl border border-line bg-surface">
-      <header className="border-b border-line p-5 sm:p-7">
-        <p className="text-xs font-semibold tracking-wide text-accent uppercase">{plan.vibe}</p>
-        <h2 className="mt-1 font-display text-4xl leading-tight sm:text-5xl">{plan.title}</h2>
-        <p className="mt-3 max-w-prose text-[15px] leading-relaxed text-muted">{plan.summary}</p>
-      </header>
-
-      <ol className="divide-y divide-line">
-        {plan.items.map((item, i) => (
-          <li key={i} className="grid gap-4 p-5 sm:grid-cols-[112px_1fr] sm:p-7">
-            <div className="flex gap-3 sm:flex-col">
-              {item.entity.image ? (
-                <img
-                  src={item.entity.image}
-                  alt=""
-                  className="h-20 w-20 rounded-2xl object-cover sm:h-28 sm:w-28"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-surface-2 font-display text-3xl text-muted sm:h-28 sm:w-28">
-                  {item.entity.name[0]}
-                </div>
-              )}
-              <p className="text-xs font-semibold tracking-wide text-muted uppercase sm:hidden">{item.slot}</p>
-            </div>
-            <div className="min-w-0">
-              <p className="hidden text-xs font-semibold tracking-wide text-muted uppercase sm:block">{item.slot}</p>
-              <h3 className="mt-0.5 text-xl font-semibold">{item.entity.name}</h3>
-              <p className="text-sm text-muted">
-                {[
-                  item.entity.address,
-                  item.entity.year,
-                  item.entity.priceLevel ? "$".repeat(item.entity.priceLevel) : null,
-                  item.entity.rating ? `★ ${item.entity.rating.toFixed(1)}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
-              <p className="mt-2 font-display text-xl leading-snug italic">{item.headline}</p>
-              <p className="mt-1.5 text-sm leading-relaxed">{item.why_group}</p>
-
-              {item.entity.fit && <FitBars fit={item.entity.fit} order={order} color={color} score={item.entity.groupScore} />}
-
-              <ul className="mt-3 flex flex-col gap-1.5">
-                {item.per_person.map((pp) => (
-                  <li key={pp.person} className="flex gap-2 text-sm">
-                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: color(pp.person) }} />
-                    <span>
-                      <span className="font-medium">{pp.person}</span>
-                      <span className="text-muted"> — {pp.reason}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      {(plan.bridges.length > 0 || plan.compromise_note) && (
-        <div className="grid gap-4 border-t border-line bg-surface-2/60 p-5 sm:grid-cols-2 sm:p-7">
-          {plan.bridges.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold tracking-wide text-muted uppercase">Taste bridges we found</h4>
-              <ul className="mt-2 flex flex-col gap-2.5">
-                {plan.bridges.map((b, i) => (
-                  <li key={i} className="text-sm leading-relaxed">
-                    <span className="mr-1.5 inline-flex -space-x-1 align-middle">
-                      {b.people.map((p) => (
-                        <span key={p} className="h-3 w-3 rounded-full ring-2 ring-surface-2" style={{ background: color(p) }} />
-                      ))}
-                    </span>
-                    {b.insight}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {plan.compromise_note && (
-            <div>
-              <h4 className="text-xs font-semibold tracking-wide text-muted uppercase">Who&apos;s stretching</h4>
-              <p className="mt-2 text-sm leading-relaxed">{plan.compromise_note}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {plan.backups.length > 0 && (
-        <div className="border-t border-line p-5 sm:p-7">
-          <h4 className="text-xs font-semibold tracking-wide text-muted uppercase">If that falls through</h4>
-          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-            {plan.backups.map((b) => (
-              <li key={b.entity.id} className="rounded-xl border border-line p-3 text-sm">
-                <span className="font-medium">{b.entity.name}</span>
-                <span className="text-muted"> — {b.note}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function FitBars({
-  fit,
-  order,
-  color,
-  score,
-}: {
-  fit: Record<string, number>;
-  order: string[];
-  color: (n: string) => string;
-  score?: number;
-}) {
-  return (
-    <div className="mt-3 rounded-xl bg-surface-2 p-3">
-      <div className="mb-2 flex items-baseline justify-between text-xs text-muted">
-        <span>Taste fit per person (Qloo affinity, percentile)</span>
-        {score !== undefined && (
-          <span>
-            Fairness score <span className="font-mono font-semibold text-ink">{score}</span>
-          </span>
-        )}
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {order
-          .filter((n) => n in fit)
-          .map((n) => (
-            <div key={n} className="grid grid-cols-[64px_1fr_32px] items-center gap-2 text-xs">
-              <span className="truncate">{n}</span>
-              <span className="h-2 overflow-hidden rounded-full bg-line">
-                <span className="bar-grow block h-full rounded-full" style={{ width: `${fit[n]}%`, background: color(n) }} />
-              </span>
-              <span className="text-right font-mono text-muted">{fit[n]}</span>
-            </div>
-          ))}
-      </div>
-    </div>
   );
 }
 

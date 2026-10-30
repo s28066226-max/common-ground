@@ -67,6 +67,43 @@ body {
   animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+.map-pin {
+  display: flex;
+  height: 28px;
+  width: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  background: #e4572e;
+  color: #fff;
+  font: 600 13px/1 var(--font-geist-sans), system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+}
+
+.leaflet-container {
+  background: var(--surface-2);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .plan-map .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
 @keyframes grow {
   from {
     transform: scaleX(0);
@@ -79,7 +116,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .rise,
-  .bar-grow {
+  .bar-grow,
+  .skeleton {
     animation: none;
   }
 }

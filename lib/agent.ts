@@ -25,12 +25,15 @@ export interface PlanRequest {
   notes?: string;
 }
 
+/** An entity as shown in a plan: Qloo data plus our per-person scoring, when we have it. */
+export type PlanEntity = Entity & Partial<Pick<Candidate, "fit" | "groupScore" | "sharedTags">>;
+
 export interface PlanItem {
   slot: string;
   headline: string;
   why_group: string;
   per_person: { person: string; reason: string }[];
-  entity: Entity & { fit?: Record<string, number>; groupScore?: number };
+  entity: PlanEntity;
 }
 
 export interface Plan {
@@ -40,7 +43,7 @@ export interface Plan {
   items: PlanItem[];
   bridges: { people: string[]; insight: string }[];
   compromise_note: string;
-  backups: { note: string; entity: Entity & { fit?: Record<string, number> } }[];
+  backups: { note: string; entity: PlanEntity }[];
 }
 
 export type AgentEvent =
@@ -266,7 +269,7 @@ const short = (s: string) => s.replace(/^urn:entity:/, "").replace("_", " ");
 export async function runAgent(req: PlanRequest, emit: (e: AgentEvent) => void): Promise<void> {
   const people = new Map<string, ResolvedPerson>();
   const ages = new Map(req.people.map((p) => [p.name, p.age]));
-  const seen = new Map<string, Entity & { fit?: Record<string, number>; groupScore?: number }>();
+  const seen = new Map<string, PlanEntity>();
   let delivered = false;
 
   const budgetLevel = req.budget ? req.budget.length : null;

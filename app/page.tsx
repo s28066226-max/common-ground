@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Composer } from "@/components/Composer";
 import { Logo } from "@/components/Logo";
+import { PlanView } from "@/components/PlanView";
 import { EMPTY_DRAFT, PRESETS, type Draft } from "@/components/presets";
-import { EMPTY_RUN, reduce, Results, type RunState } from "@/components/Results";
-import type { AgentEvent } from "@/lib/agent";
+import { colorFor, EMPTY_RUN, reduce, Results, type RunState } from "@/components/Results";
+import type { AgentEvent, Plan } from "@/lib/agent";
+import { decodePlan, type SharedPlan } from "@/lib/share";
 
 const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com";
 
@@ -15,7 +17,15 @@ export default function Home() {
   const [run, setRun] = useState<RunState>(EMPTY_RUN);
   const [busy, setBusy] = useState(false);
   const [order, setOrder] = useState<string[]>([]);
+  const [meta, setMeta] = useState({ occasion: "", city: "" });
+  const [viewing, setViewing] = useState<SharedPlan>();
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Open a plan someone shared with us (/#plan=...).
+  useEffect(() => {
+    const encoded = location.hash.startsWith("#plan=") ? location.hash.slice(6) : "";
+    if (encoded) decodePlan(encoded).then((data) => data && setViewing(data));
+  }, []);
 
   async function plan() {
     const body = {
@@ -28,8 +38,13 @@ export default function Home() {
         .map((p) => ({ name: p.name.trim(), loves: p.loves.trim(), age: p.age })),
     };
     setOrder(body.people.map((p) => p.name));
+    setMeta({ occasion: body.occasion, city: body.city });
+    setViewing(undefined);
+    if (location.hash) history.replaceState(null, "", location.pathname);
     setRun(EMPTY_RUN);
     setBusy(true);
+    let finalPlan: Plan | undefined;
+    const tastes: Record<string, string[]> = {};
     requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
 
     // The taste-blind control runs in parallel.
@@ -59,6 +74,8 @@ export default function Home() {
         for (const f of frames) {
           if (!f.startsWith("data: ")) continue;
           const event = JSON.parse(f.slice(6)) as AgentEvent;
+          if (event.type === "plan") finalPlan = event.plan;
+          if (event.type === "person") tastes[event.person.name] = event.person.tasteTags.slice(0, 6);
           setRun((s) => reduce(s, event));
         }
       }
@@ -67,6 +84,14 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
+    if (finalPlan) {
+      saveRecent({ plan: finalPlan, order: body.people.map((p) => p.name), occasion: body.occasion, city: body.city, tastes });
+    }
+  }
+
+  function openSaved(data: SharedPlan) {
+    setViewing(data);
+    requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   const started = busy || run.steps.length > 0 || !!run.error;
@@ -111,12 +136,115 @@ export default function Home() {
         </section>
 
         <section ref={resultsRef} className="min-w-0 scroll-mt-6" aria-live="polite">
-          {started ? <Results run={run} order={order} busy={busy} /> : <HowItWorks />}
+          {viewing ? (
+            <SavedPlan data={viewing} onClose={() => {
+              setViewing(undefined);
+              if (location.hash) history.replaceState(null, "", location.pathname);
+            }} />
+          ) : started ? (
+            <Results run={run} order={order} busy={busy} occasion={meta.occasion} city={meta.city} />
+          ) : (
+            <>
+              <HowItWorks />
+              <RecentPlans onOpen={openSaved} />
+            </>
+          )}
         </section>
       </main>
 
       <McpSection />
     </div>
+  );
+}
+
+function SavedPlan({ data, onClose }: { data: SharedPlan; onClose: () => void }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3 text-sm">
+        <span className="text-muted">
+          A {data.occasion.toLowerCase()} in {data.city} for {data.order.join(", ")}
+        </span>
+        <button onClick={onClose} className="shrink-0 text-muted underline-offset-2 hover:text-ink hover:underline">
+          Close
+        </button>
+      </div>
+      <PlanView
+        plan={data.plan}
+        order={data.order}
+        color={colorFor(data.order)}
+        tastes={data.tastes}
+        options={[]}
+        occasion={data.occasion}
+        city={data.city}
+      />
+    </div>
+  );
+}
+
+// Recent plans live in this browser only: no account needed to come back to them.
+const RECENT_KEY = "common-ground:recent";
+const RECENT_EVENT = "common-ground:recent-changed";
+
+function saveRecent(data: SharedPlan) {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as (SharedPlan & { savedAt: number })[];
+    const next = [{ ...data, savedAt: Date.now() }, ...list.filter((p) => p.plan.title !== data.plan.title)].slice(0, 6);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event(RECENT_EVENT));
+  } catch {
+    /* storage full or blocked: saving is a convenience, not a requirement */
+  }
+}
+
+function readRecent() {
+  try {
+    return localStorage.getItem(RECENT_KEY) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+
+function RecentPlans({ onOpen }: { onOpen: (data: SharedPlan) => void }) {
+  const raw = useSyncExternalStore(
+    (notify) => {
+      window.addEventListener("storage", notify);
+      window.addEventListener(RECENT_EVENT, notify);
+      return () => {
+        window.removeEventListener("storage", notify);
+        window.removeEventListener(RECENT_EVENT, notify);
+      };
+    },
+    readRecent,
+    () => "[]",
+  );
+  const plans = useMemo(() => {
+    try {
+      return JSON.parse(raw) as (SharedPlan & { savedAt: number })[];
+    } catch {
+      return [];
+    }
+  }, [raw]);
+  if (!plans.length) return null;
+
+  return (
+    <section className="mt-5 rounded-3xl border border-line bg-surface p-5 sm:p-6">
+      <h2 className="text-xs font-semibold tracking-wide text-muted uppercase">Your recent plans</h2>
+      <ul className="mt-3 flex flex-col gap-2">
+        {plans.map((p) => (
+          <li key={p.savedAt}>
+            <button
+              onClick={() => onOpen(p)}
+              className="w-full rounded-xl border border-line px-3 py-2.5 text-left transition hover:border-ink/40"
+            >
+              <span className="block text-sm font-medium">{p.plan.title}</span>
+              <span className="block text-xs text-muted">
+                {p.occasion} · {p.city} · {p.order.join(", ")}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

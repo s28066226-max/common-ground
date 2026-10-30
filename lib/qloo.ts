@@ -99,6 +99,8 @@ export interface Entity {
   rating?: number;
   year?: number;
   url?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface Tag {
@@ -112,7 +114,7 @@ const SEARCH_TYPE: Record<string, string> = { "urn:entity:video_game": "urn:enti
 const FROM_SEARCH_TYPE: Record<string, string> = { "urn:entity:videogame": "urn:entity:video_game" };
 
 // Keep descriptive taste tags; drop encyclopedic noise ("Knights Of The Legion Of Honour").
-const TASTE_TAG = /genre|style|theme|characteristic|audience|cuisine|ambience|specialty_dish/;
+const TASTE_TAG = /genre|style|theme|characteristic|audience|cuisine|ambience|specialty_dish|beverage_offering|setting/;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toEntity(raw: any): Entity {
@@ -134,7 +136,7 @@ function toEntity(raw: any): Entity {
     tags: (tasteTags.length ? tasteTags : tags)
       .map((t) => t?.name)
       .filter((n): n is string => !!n)
-      .slice(0, 8),
+      .slice(0, 12),
     image: p?.image?.url ?? (typeof p?.image === "string" ? p.image : undefined),
     description: truncate(p?.short_description ?? p?.description, 220),
     address: p?.address,
@@ -143,6 +145,8 @@ function toEntity(raw: any): Entity {
     rating: num(p?.business_rating ?? p?.rating),
     year: num(p?.release_year ?? p?.publication_year),
     url: p?.websites?.[0] ?? p?.website ?? raw?.external?.resy?.[0]?.url,
+    lat: num(raw?.location?.lat),
+    lon: num(raw?.location?.lon),
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
