@@ -4,6 +4,8 @@
 
 Tell Common Ground what everyone in your group loves (bands, films, shows, books, food, brands). An agent maps each person onto Qloo's taste graph, scores every option against every person, and plans the one night, trip or offsite the whole group will actually enjoy.
 
+**▶ Live demo: https://common-ground-delta-sandy.vercel.app**
+
 Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com) · Powered by [Qloo](https://qloo.com) + [Google Gemini](https://ai.google.dev)
 
 ---

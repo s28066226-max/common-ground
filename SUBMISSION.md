@@ -19,6 +19,6 @@
 - Every tool call and progress update streams live to the UI.
 - **It's also an MCP server** (`/api/mcp`). Claude, Cursor, ChatGPT or Antigravity can call `taste_overlap` and get group-aware taste through one tool.
 
-**Try it.** Open the live demo, choose an example ("Opposites attract", "Three generations" or "The team offsite") and press *Find our common ground*.
+**Try it.** Open the live demo (https://common-ground-delta-sandy.vercel.app), choose an example ("Opposites attract", "Three generations" or "The team offsite") and press *Find our common ground*.
 
 **Built with.** Qloo Hackathon API (`/search`, `/v2/tags`, `/v2/insights`), Google Gemini (`@google/genai`), Next.js 16, TypeScript, Tailwind CSS, Vercel.
