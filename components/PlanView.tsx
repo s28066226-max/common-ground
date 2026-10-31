@@ -157,7 +157,7 @@ function FitMatrix({
     <section className="border-b border-line p-5 sm:p-7" aria-label="How well each stop fits each person">
       <h3 className={eyebrow}>Plan at a glance · fit per person</h3>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[320px] border-separate border-spacing-1 text-sm">
+        <table className="w-full min-w-[320px] table-fixed border-separate border-spacing-1 text-sm">
           <thead>
             <tr>
               <th className="w-20" />
@@ -390,7 +390,14 @@ function Alternatives({
 
   return (
     <div className="mt-3">
-      <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="text-sm text-muted underline-offset-2 hover:text-ink hover:underline">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs font-medium transition hover:border-ink/40"
+      >
+        <span aria-hidden="true" className={`transition-transform ${open ? "rotate-90" : ""}`}>
+          ›
+        </span>
         {open ? "Hide" : "Compare with"} {others.length} other option{others.length === 1 ? "" : "s"} the agent considered
       </button>
       {open && (

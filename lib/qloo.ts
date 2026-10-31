@@ -114,6 +114,8 @@ const SEARCH_TYPE: Record<string, string> = { "urn:entity:video_game": "urn:enti
 const FROM_SEARCH_TYPE: Record<string, string> = { "urn:entity:videogame": "urn:entity:video_game" };
 
 // Keep descriptive taste tags; drop encyclopedic noise ("Knights Of The Legion Of Honour").
+// Occupations show up as genre tags on people ("Director"); they describe the job, not the taste.
+const ROLE_WORD = /^(film )?(director|actor|actress|singer|songwriter|writer|author|producer|musician|rapper|screenwriter|composer)s?$/i;
 const TASTE_TAG = /genre|style|theme|characteristic|audience|cuisine|ambience|specialty_dish|beverage_offering|setting/;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -125,7 +127,7 @@ function toEntity(raw: any): Entity {
   );
   const rawType = types[0] ?? "unknown";
   const tags: { name?: string; type?: string }[] = raw?.tags ?? [];
-  const tasteTags = tags.filter((t) => t?.name && TASTE_TAG.test(t.type ?? ""));
+  const tasteTags = tags.filter((t) => t?.name && TASTE_TAG.test(t.type ?? "") && !ROLE_WORD.test(t.name));
   return {
     id: raw?.entity_id ?? raw?.id,
     name: raw?.name,
